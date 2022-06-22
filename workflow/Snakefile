@@ -1,0 +1,205 @@
+###############################################################################
+# Snakefile
+#
+# Author: dakota.s.murray@gmail.com
+#
+# Run with the Snakemake workflow automation tool
+###############################################################################
+
+###############################################################################
+# Imports
+###############################################################################
+from os.path import join as j
+from os import listdir
+import os.path
+
+from networkx.readwrite import json_graph
+
+def read_json_file(filename):
+    with open(filename) as f:
+        js_graph = json.load(f)
+    return json_graph.node_link_graph(js_graph)
+
+
+###############################################################################
+# Folders
+###############################################################################
+configfile:
+    "../config/config.json"
+
+# store the local path to the dropbox folder in the 'PROJ_HOME_DIR' file.
+DATA_HOME = config['data_path']
+
+###############################################################################
+# Data
+###############################################################################
+ORIG_NETWORK = j(DATA_HOME, 'raw', 'panel_adj_matrix.mtx')
+HASHED_NODES = j(DATA_HOME, 'raw', 'panel_rownames_hashed.txt')
+HASHED_NETWORK = j(DATA_HOME, 'raw', 'panel_adj_matrix_hashed.mtx')
+
+USER_VERIFIED = j(DATA_HOME, 'raw', 'verified_hashed.tsv')
+USER_ANTIVAX = j(DATA_HOME, 'raw', 'user_antivax_ranking_hashed.tsv')
+USER_DEMOGRAPHICS = j(DATA_HOME, 'raw', 'hashed_demographics_for_ccnr.tsv')
+
+NETWORK_WHOLE = j(DATA_HOME, 'raw', 'panel_whole.gml')
+NETWORK_PRUNED = j(DATA_HOME, 'raw', 'panel_pruned.gml')
+NETWORK_ANTIVAX = j(DATA_HOME, 'raw', 'panel_antivac-only.gml')
+
+ANTIVAX_NET = j(DATA_HOME, 'raw', '{graph}.gml')
+ANTIVAX_NET_PROC = j(DATA_HOME, 'derived', '{graph}_proc.json')
+
+ANTIVAX_KEYWORDS = j(DATA_HOME, 'raw', 'hashed_tweet_keywords_for_ccnr.tsv')
+
+ANTIVAX_KEYWORD_TIMELINE = j(DATA_HOME, 'raw', 'user_misinformation_time_series_hashed.tsv')
+
+
+SBM_COMMUNITIES = j(DATA_HOME, "additional", "sbm_communities.txt")
+COARSE_NETWORK = j(DATA_HOME, 'derived', 'coarse', 'coarse_network.txt')
+COMM_NODEMAP = j(DATA_HOME, 'derived', 'coarse', 'comm_nodemap.json')
+
+SPRING_LAYOUT_DF = j(DATA_HOME, 'derived', 'coarse', 'network_layout_df_spring.csv')
+
+###############################################################################
+# Results
+###############################################################################
+ANTIVAX_LAYOUT = j(DATA_HOME, 'derived', 'layout', '{graph}_layout.json')
+ANTIVAX_NET_POST = j(DATA_HOME, 'derived', '{graph}_post.json')
+ANTIVAX_NET_OBJ_NODES = j(DATA_HOME, 'derived', '{graph}_post-nodes.obj')
+ANTIVAX_NET_OBJ_LINKS = j(DATA_HOME, 'derived', '{graph}_post-links.obj')
+ANTIVAX_NODES_CSV = j(DATA_HOME, 'derived', 'touchdesigner', '{graph}_nodes.csv')
+ANTIVAX_LINKS_CSV = j(DATA_HOME, 'derived', 'touchdesigner', '{graph}_links.csv')
+
+ANTIVAX_NODES_XYZ = j(DATA_HOME, 'derived', 'touchdesigner', '{graph}_nodes.xyz')
+ANTIVAX_LINKS_XYZ = j(DATA_HOME, 'derived', 'touchdesigner', '{graph}_links.xyz')
+
+ANTIVAX_LINKS_EDGELIST = j(DATA_HOME, 'derived', '{graph}_edgelist.csv')
+
+ANTIVAX_KEYWORDS_SAMPLE = j(DATA_HOME, 'derived', 'tweets', '{graph}_keyword_sample.csv')
+
+###############################################################################
+# PARAMETERS
+###############################################################################
+GRAPHS = ["panel_antivax-only"]
+
+
+###############################################################################
+# Target Rule
+###############################################################################
+rule all:
+    input:
+        NETWORK_WHOLE,
+        NETWORK_PRUNED,
+        expand(ANTIVAX_NET_POST, graph = GRAPHS),
+        expand(ANTIVAX_NET_OBJ_NODES, graph = GRAPHS),
+        expand(ANTIVAX_NET_OBJ_LINKS, graph = GRAPHS),
+        expand(ANTIVAX_NODES_CSV, graph = GRAPHS),
+        expand(ANTIVAX_LINKS_CSV, graph = GRAPHS),
+        expand(ANTIVAX_NODES_XYZ, graph = GRAPHS),
+        expand(ANTIVAX_LINKS_XYZ, graph = GRAPHS),
+        expand(ANTIVAX_KEYWORDS_SAMPLE, graph = GRAPHS),
+        expand(ANTIVAX_LINKS_EDGELIST, graph = GRAPHS),
+        COARSE_NETWORK,
+        COMM_NODEMAP,
+        SPRING_LAYOUT_DF
+
+rule create_whole_network:
+    input:
+        ORIG_NETWORK,
+        HASHED_NODES,
+        USER_ANTIVAX,
+        USER_VERIFIED,
+        USER_DEMOGRAPHICS
+    output:
+        NETWORK_WHOLE
+    script: "scripts/relabel_and_create_network.py"
+
+rule prune_network:
+    input: rules.create_whole_network.output
+    output: NETWORK_PRUNED
+    script: "scripts/prune_network.py"
+
+rule filter_to_antivax:
+    input: rules.prune_network.output
+    output: expand(ANTIVAX_NET, graph = "panel_antivax-only")
+    script: "scripts/filterto_antivax_only.py"
+
+rule preprocess_network:
+    input: rules.filter_to_antivax.output
+    output: ANTIVAX_NET_PROC
+    script: "scripts/preprocess_network.py"
+
+# Maybe I don't need this right now?
+rule layout_network:
+    input: rules.preprocess_network.output
+    output: ANTIVAX_LAYOUT
+    script: "scripts/neural_layout.py"
+
+rule postprocess_network:
+    input:
+        layout = rules.layout_network.output,
+        graph = rules.preprocess_network.output
+    output: ANTIVAX_NET_POST
+    script: "scripts/postprocess_network.py"
+
+# These are also perhaps not very useful now
+rule convert_to_obj:
+    input: rules.postprocess_network.output
+    output:
+        nodes = ANTIVAX_NET_OBJ_NODES,
+        links = ANTIVAX_NET_OBJ_LINKS
+    script: "scripts/convert_json_to_obj.py"
+
+rule convert_nodes_to_formatted_csv:
+    input: rules.postprocess_network.output
+    output: ANTIVAX_NODES_CSV
+    script: "scripts/convert_nodes_to_formatted_csv.py"
+
+rule convert_links_to_formatted_csv:
+    input: rules.postprocess_network.output
+    output: ANTIVAX_LINKS_CSV
+    script: "scripts/convert_links_to_formatted_csv.py"
+
+rule format_nodes_as_xyz:
+    input: rules.convert_nodes_to_formatted_csv.output
+    output: ANTIVAX_NODES_XYZ
+    script: "scripts/convert_nodes_csv_to_xyz.R"
+
+rule format_links_as_xyz:
+    input: rules.convert_links_to_formatted_csv.output
+    output: ANTIVAX_LINKS_XYZ
+    script: "scripts/convert_links_csv_to_xyz.R"
+
+rule format_links_as_edgelist:
+    input: rules.postprocess_network.output
+    output: ANTIVAX_LINKS_EDGELIST
+    script: "scripts/convert_links_to_edgelist.py"
+
+rule sample_tweet_data:
+    input:
+        tweets = ANTIVAX_KEYWORDS,
+        nodes = rules.convert_nodes_to_formatted_csv.output
+    output: ANTIVAX_KEYWORDS_SAMPLE
+    script: "scripts/sample_tweet_keywords.R"
+
+rule coarsen_network:
+    input:
+        communities = SBM_COMMUNITIES,
+        graph = NETWORK_PRUNED
+    output:
+        a = COARSE_NETWORK,
+        b = COMM_NODEMAP
+    script: "scripts/coarsen_network.py"
+
+rule basic_spring_layout:
+    input:
+        rules.prune_network.output,
+        rules.coarsen_network.output.a,
+        rules.coarsen_network.output.b,
+        USER_ANTIVAX
+    output: SPRING_LAYOUT_DF
+    script: "scripts/basic_spring_layout.py"
+
+# TODO: Add all OOD processing here
+# TODO: Generate "apostle" profiles
+# TODO:
+# TODO: Get the links of the 12 apostles

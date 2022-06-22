@@ -1,0 +1,16 @@
+.DS_Store
+
+.ipynb*
+
+.snakemake
+
+__pycache__/*
+workflow/*/__pycache__*
+
+obj/*
+result/*
+
+
+data/raw
+data/derived
+data/additional

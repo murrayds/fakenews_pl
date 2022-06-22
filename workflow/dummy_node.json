@@ -1,0 +1,1 @@
+{"scale": 1, "links": {}, "nodes": {"positions": [[0, 0, 0]], "labels": [0]}, "info": {"A": 200, "pow": 2, "n_radius": 1.0, "k": 10, "nodes": {"radius": 1.0, "weighted": true, "labels": [0]}, "long_rep": 0.01, "links": {"T0": 0.5, "ce": 100.0, "weighted": true, "thickness": 0.1}}}
